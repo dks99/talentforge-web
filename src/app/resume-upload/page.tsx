@@ -2,114 +2,88 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
-import { useRouter } from "next/navigation"
 
-export default function ProfilePage() {
-  const [authUser, setAuthUser] = useState<any | null>(null)
-  const [name, setName] = useState("")
-  const [city, setCity] = useState("")
-  const [skillsInput, setSkillsInput] = useState("") // "pharmacy, billing"
-  const [years, setYears] = useState<number | "">("")
+
+export default function ResumeUploadPage() {
+  const [user, setUser] = useState<any | null>(null)
+  const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
-
-  // load current user on mount and subscribe to auth changes
+  
   useEffect(() => {
-    let mounted = true
+    // get current user on mount
+    supabase.auth.getUser().then(({ data }) => setUser(data?.user ?? null))
 
-    async function loadUser() {
-      const { data } = await supabase.auth.getUser()
-      if (!mounted) return
-      setAuthUser(data?.user ?? null)
-    }
-    loadUser()
-
-    // optional: listen to auth changes (keeps authUser fresh)
-    const { data: subs } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthUser(session?.user ?? null)
+    // subscribe to auth changes. `onAuthStateChange` returns { data: { subscription } }
+    const sub = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
     })
 
+    // cleanup: unsubscribe the realtime subscription inside `data`
     return () => {
-      mounted = false
-      subs?.subscription?.unsubscribe?.()
+      try {
+        // access the subscription correctly: sub.data.subscription.unsubscribe()
+        // use optional chaining to be defensive in case shape changes
+        (sub as any)?.data?.subscription?.unsubscribe?.()
+      } catch (err) {
+        // ignore unsubscribe errors
+        // (keeps cleanup safe and prevents runtime crash)
+      }
     }
   }, [])
 
-  async function saveProfile() {
+  async function uploadResume() {
+    if (!user) {
+      alert("Please sign in first.")
+      return
+    }
+    if (!file) {
+      alert("Select a file first.")
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Please upload a file smaller than 10 MB.")
+      return
+    }
     setLoading(true)
     try {
-      // Always re-check user at action time (avoid stale/null)
-      const { data } = await supabase.auth.getUser()
-      const user = data?.user
-      if (!user) {
-        alert("You must be signed in to save the profile. Please sign in.")
-        router.push("/auth")
+      // Ensure profile exists and fetch its id
+      const { data: profileData } = await supabase.from("profiles").select("id").eq("auth_uid", user.id).maybeSingle()
+      if (!profileData) {
+        alert("Please create your profile before uploading a resume.")
         return
       }
+      const profileId = (profileData as any).id
 
-      // normalize inputs
-      const skills = skillsInput.split(",").map(s => s.trim()).filter(Boolean)
-      const yearsVal = years === "" ? null : Number(years)
+      const fileName = `${profileId}/${Date.now()}_${file.name}`
+      const { data: uploadData, error: uploadErr } = await supabase.storage.from("resumes").upload(fileName, file)
+      if (uploadErr) throw uploadErr
 
-      // upsert by auth_uid (make sure constraint exists in DB)
-      const { error } = await supabase
-        .from("profiles")
-        .upsert(
-          [{
-            auth_uid: user.id,
-            full_name: name,
-            city,
-            skills,
-            years_experience: yearsVal,
-            role: "candidate"
-          }],
-          { onConflict: "auth_uid" }
-        )
+      const { error: insertErr } = await supabase.from("resumes").insert([{
+        profile_id: profileId,
+        file_path: fileName,
+        parsed: { text: null } // placeholder; user will confirm/edit parsed content later
+      }])
+      if (insertErr) throw insertErr
 
-      if (error) {
-        console.error("Save profile error:", error)
-        alert("Error saving profile: " + error.message)
-      } else {
-        alert("Profile saved!")
-      }
+      alert("Resume uploaded. Please go to Confirm Resume to edit parsed details.")
+      setFile(null)
+    } catch (err: any) {
+      alert("Upload error: " + (err.message || err))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="p-8 max-w-2xl">
-      <h1 className="text-2xl font-semibold mb-4">My Profile</h1>
-
-      <div className="mb-2">
-        <label className="block text-sm">Full name</label>
-        <input className="w-full border p-2" value={name} onChange={e => setName(e.target.value)} />
-      </div>
-
-      <div className="mb-2">
-        <label className="block text-sm">City</label>
-        <input className="w-full border p-2" value={city} onChange={e => setCity(e.target.value)} />
-      </div>
-
-      <div className="mb-2">
-        <label className="block text-sm">Top skills (comma separated)</label>
-        <input className="w-full border p-2" value={skillsInput} onChange={e => setSkillsInput(e.target.value)} />
-      </div>
-
-      {/* <div className="mb-2">
-        <label className="block text-sm">Years experience</label>
-        <input className="w-full border p-2" value={years as any} onChange={e => setYears(e.target.value)} />
-      </div> */}
-
+    <div className="p-6 max-w-xl mx-auto">
+      <h1 className="text-xl font-semibold mb-4">Upload Resume</h1>
+      <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={e => setFile(e.target.files?.[0] ?? null)} />
       <div className="mt-4">
-        <button
-          onClick={saveProfile}
-          disabled={loading}
-          className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60"
-        >
-          {loading ? "Saving..." : "Save Profile"}
+        <button onClick={uploadResume} disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded">
+          {loading ? "Uploading..." : "Upload Resume"}
         </button>
       </div>
+      <p className="text-sm text-gray-500 mt-3">Tip: If parsing fails later, you can edit parsed fields manually on the confirm page.</p>
     </div>
   )
 }

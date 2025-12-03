@@ -1,54 +1,57 @@
+// src/app/profile/page.tsx
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase } from "../../lib/supabaseClient"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
+import { useRouter } from "next/navigation"
 
-export default function Profile() {
-  const [user, setUser] = useState<any>(null)
-  const [name, setName] = useState("")
-  const [city, setCity] = useState("")
+export default function ProfilePage() {
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<any | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user))
-  }, [])
+    let mounted = true
 
-  async function saveProfile() {
-    const { error } = await supabase.from("profiles").insert([
-      {
-        auth_uid: user.id,
-        full_name: name,
-        city,
-        role: "candidate"
+    async function bootstrap() {
+      const { data } = await supabase.auth.getSession()
+      const session = data?.session ?? null
+      if (!mounted) return
+      if (!session) {
+        // no session -> redirect to auth
+        router.replace("/auth")
+        return
       }
-    ])
-    if (error) alert(error.message)
-    else alert("Profile saved!")
+      setUser(session.user)
+      setLoading(false)
+    }
+    bootstrap()
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        router.replace("/auth")
+      } else {
+        setUser(session.user)
+      }
+    })
+
+    return () => {
+      mounted = false
+      try {
+        ;(sub as any)?.subscription?.unsubscribe?.()
+      } catch {}
+    }
+  }, [router])
+
+  if (loading) {
+    return <div style={{ padding: 20 }}>Loading profile…</div>
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-xl font-bold">My Profile</h1>
-
-      <input
-        className="border p-2 mt-4"
-        placeholder="Full Name"
-        value={name}
-        onChange={e => setName(e.target.value)}
-      />
-
-      <input
-        className="border p-2 mt-4"
-        placeholder="City"
-        value={city}
-        onChange={e => setCity(e.target.value)}
-      />
-
-      <button
-        onClick={saveProfile}
-        className="bg-blue-600 text-white px-4 py-2 mt-4"
-      >
-        Save Profile
-      </button>
+    <div style={{ padding: 20 }}>
+      <h1>My Profile</h1>
+      <p>Signed in as: {user?.email}</p>
+      {/* your existing profile form below — you can keep previous UI and logic */}
     </div>
   )
 }
