@@ -96,10 +96,10 @@ export default function ProfilePage() {
         <input className="w-full border p-2" value={skillsInput} onChange={e => setSkillsInput(e.target.value)} />
       </div>
 
-      <div className="mb-2">
+      {/* <div className="mb-2">
         <label className="block text-sm">Years experience</label>
         <input className="w-full border p-2" value={years as any} onChange={e => setYears(e.target.value)} />
-      </div>
+      </div> */}
 
       <div className="mt-4">
         <button
