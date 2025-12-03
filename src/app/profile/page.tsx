@@ -1,6 +1,8 @@
 // src/app/profile/page.tsx
 "use client"
 
+// near top of file
+import RoleMenu from "../components/RoleMenu"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { useRouter } from "next/navigation"
@@ -244,6 +246,17 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
+      <div className="bg-white p-6 rounded-lg shadow">
+        <div className="flex gap-4">
+          <div className="w-28">
+            {/* avatar block (existing) */}
+          </div>
+          <div className="flex-1">
+            <RoleMenu role={role} />
+          </div>
+        </div>
+      </div>
+
       <div className="mx-auto max-w-4xl">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold">My Profile</h1>
